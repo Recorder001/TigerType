@@ -273,7 +273,7 @@ async function loadSharedTexts() {
         items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
         if (items.length === 0) {
-            grid.innerHTML = `<div class="empty-msg">
+            grid.innerHTML = `<div class="empty-msg" style="grid-column:1/-1; text-align:center;">
                 공유된 글귀가 없습니다.<br>첫 번째로 글귀를 공유해 보세요!</div>`;
             return;
         }
@@ -288,9 +288,6 @@ async function loadSharedTexts() {
                     <span>${fmtDate(s.timestamp)}</span>
                 </div>
                 <div class="card-actions">
-                    <button class="btn-copy" onclick="copyFromEl(this, 'sbody-${idx}')">
-                        복사하기
-                    </button>
                     <button class="btn-copy" onclick="downloadTxt('stitle-${idx}', 'sbody-${idx}')">
                         .txt 다운로드
                     </button>
