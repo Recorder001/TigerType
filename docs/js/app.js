@@ -17,9 +17,6 @@ import {
     push,
     get,
     update,
-    query,
-    orderByChild,
-    limitToLast,
 } from "https://www.gstatic.com/firebasejs/11.7.3/firebase-database.js";
 
 // ── Firebase 설정 ──────────────────────────────────────
@@ -213,11 +210,11 @@ async function loadRanking() {
         <span class="spinner"></span> 랭킹 불러오는 중...</td></tr>`;
 
     try {
-        const q    = query(ref(db, "records"), orderByChild("cpm"), limitToLast(50));
-        const snap = await get(q);
+        const snap = await get(ref(db, "records"));
         const rows = [];
         snap.forEach(child => rows.push(child.val()));
         rows.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
+        if (rows.length > 50) rows.length = 50;
 
         if (rows.length === 0) {
             tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
@@ -244,7 +241,8 @@ async function loadRanking() {
                 <td>${badges}</td>
             </tr>`;
         }).join("");
-    } catch {
+    } catch (err) {
+        console.error("랭킹 로드 에러:", err);
         tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
             랭킹을 불러올 수 없습니다.</td></tr>`;
     }
