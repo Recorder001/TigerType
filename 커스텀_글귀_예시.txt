@@ -1,0 +1,12 @@
+@나의 첫 번째 글귀
+여기에 연습하고 싶은 글을 적으세요.
+줄바꿈도 그대로 반영됩니다.
+
+여러 문단을 넣을 수도 있어요.
+
+@My Custom English Text
+Type anything you want here.
+Line breaks are preserved as-is.
+
+@짧은 메모
+짧은 글귀도 OK!
