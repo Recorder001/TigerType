@@ -228,11 +228,13 @@ async function loadRanking() {
         const bestMap = {};
         for (const r of raw) {
             const key = `${r.uid || ""}__${r.text_name || ""}`;
+            console.log("dedup key:", key, "cpm:", r.cpm, "text_name:", r.text_name);
             if (!bestMap[key] || (r.cpm || 0) > (bestMap[key].cpm || 0)) {
                 bestMap[key] = r;
             }
         }
         allRecords = Object.values(bestMap);
+        console.log("after dedup:", allRecords.length);
         allRecords.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
 
         // 필터 드롭다운 갱신
