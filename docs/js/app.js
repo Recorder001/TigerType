@@ -215,8 +215,14 @@ async function loadRanking() {
 
     try {
         const snap = await get(ref(db, "records"));
+        console.log("records exists:", snap.exists());
+        console.log("records children count:", snap.size);
         const raw = [];
-        snap.forEach(child => raw.push(child.val()));
+        snap.forEach(child => {
+            console.log("child key:", child.key, "val:", JSON.stringify(child.val()));
+            raw.push(child.val());
+        });
+        console.log("raw count:", raw.length);
 
         // 같은 uid + 같은 text_name 중 CPM 최고 기록만 유지
         const bestMap = {};
