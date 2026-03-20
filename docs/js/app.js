@@ -210,14 +210,9 @@ async function loadRanking() {
         <span class="spinner"></span> 랭킹 불러오는 중...</td></tr>`;
 
     try {
-        const recordsRef = ref(db, "records");
-        console.log("DB ref:", recordsRef.toString());
-        const snap = await get(recordsRef);
-        console.log("snap exists:", snap.exists());
-        console.log("snap val:", snap.val());
+        const snap = await get(ref(db, "records"));
         const rows = [];
         snap.forEach(child => rows.push(child.val()));
-        console.log("rows count:", rows.length);
         rows.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
         if (rows.length > 50) rows.length = 50;
 
