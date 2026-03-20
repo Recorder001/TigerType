@@ -46,7 +46,10 @@
 
     <!-- 랭킹 탭 -->
     <div id="tab-ranking" class="tab-content active">
-        <h1 class="section-title">전체 랭킹</h1>
+        <div style="display:flex; align-items:center; gap:16px; margin-bottom:4px;">
+            <h1 class="section-title" style="margin-bottom:0;">전체 랭킹</h1>
+            <button class="btn-copy" onclick="loadRanking()" style="padding:6px 14px;">새로고침</button>
+        </div>
 
         <!-- 연습글 필터 -->
         <div style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">

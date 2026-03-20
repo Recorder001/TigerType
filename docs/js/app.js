@@ -206,6 +206,8 @@ async function handleProfileSave(e) {
 
 let allRecords = [];   // 전체 기록 캐시
 
+window.loadRanking = loadRanking;
+
 async function loadRanking() {
     const tbody = $("#ranking-body");
     tbody.innerHTML = `<tr><td colspan="8" class="loading-msg">
@@ -482,4 +484,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 초기 페이지
     navigate("main");
+
+    // 30초마다 자동 갱신
+    setInterval(() => {
+        loadRanking();
+        loadSharedTexts();
+    }, 30000);
 });
