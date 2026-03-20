@@ -204,6 +204,8 @@ async function handleProfileSave(e) {
 // 랭킹
 // ══════════════════════════════════════════════════════════
 
+let allRecords = [];   // 전체 기록 캐시
+
 async function loadRanking() {
     const tbody = $("#ranking-body");
     tbody.innerHTML = `<tr><td colspan="8" class="loading-msg">
@@ -211,41 +213,85 @@ async function loadRanking() {
 
     try {
         const snap = await get(ref(db, "records"));
-        const rows = [];
-        snap.forEach(child => rows.push(child.val()));
-        rows.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
-        if (rows.length > 50) rows.length = 50;
+        const raw = [];
+        snap.forEach(child => raw.push(child.val()));
 
-        if (rows.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
-                아직 기록이 없습니다.<br>게임에서 연습을 완료해 보세요!</td></tr>`;
-            return;
+        // 같은 uid + 같은 text_name 중 CPM 최고 기록만 유지
+        const bestMap = {};
+        for (const r of raw) {
+            const key = `${r.uid || ""}__${r.text_name || ""}`;
+            if (!bestMap[key] || (r.cpm || 0) > (bestMap[key].cpm || 0)) {
+                bestMap[key] = r;
+            }
         }
+        allRecords = Object.values(bestMap);
+        allRecords.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
 
-        tbody.innerHTML = rows.map((r, i) => {
-            const rank = i + 1;
-            const cls  = rank <= 3 ? `rank-${rank}` : "";
-            let badges = "";
-            if (r.challenge_mode) badges += `<span class="badge badge-challenge">도전</span>`;
-            if (r.is_custom)      badges += `<span class="badge badge-custom">커스텀</span>`;
-            if (r.full_combo)     badges += `<span class="badge badge-fullcombo">FULL COMBO</span>`;
-
-            return `<tr class="${cls}">
-                <td>${rank}</td>
-                <td>${esc(r.nickname || "익명")}</td>
-                <td>${esc(r.text_name || "-")}</td>
-                <td class="cpm-val">${r.cpm} 타/분</td>
-                <td class="acc-val">${(r.accuracy || 0).toFixed(1)}%</td>
-                <td class="hide-mobile">${fmtTime(r.elapsed || 0)}</td>
-                <td class="hide-mobile">${r.backspace_count ?? 0}회</td>
-                <td>${badges}</td>
-            </tr>`;
-        }).join("");
+        // 필터 드롭다운 갱신
+        buildFilterOptions();
+        renderRanking();
     } catch (err) {
         console.error("랭킹 로드 에러:", err);
         tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
             랭킹을 불러올 수 없습니다.</td></tr>`;
     }
+}
+
+function buildFilterOptions() {
+    const select = $("#ranking-filter");
+    const current = select.value;
+    const textNames = [...new Set(allRecords.map(r => r.text_name || "-"))].sort();
+
+    select.innerHTML = `<option value="__all__">전체</option>`;
+    for (const name of textNames) {
+        const r = allRecords.find(x => (x.text_name || "-") === name);
+        const prefix = r && r.is_custom ? "[커스텀] " : "";
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = prefix + name;
+        select.appendChild(opt);
+    }
+    select.value = current || "__all__";
+}
+
+window.filterRanking = function() { renderRanking(); };
+
+function renderRanking() {
+    const tbody = $("#ranking-body");
+    const filter = $("#ranking-filter").value;
+
+    let rows = allRecords;
+    if (filter !== "__all__") {
+        rows = rows.filter(r => (r.text_name || "-") === filter);
+    }
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
+            아직 기록이 없습니다.<br>게임에서 연습을 완료해 보세요!</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((r, i) => {
+        const rank = i + 1;
+        const cls  = rank <= 3 ? `rank-${rank}` : "";
+        let badges = "";
+        if (r.challenge_mode) badges += `<span class="badge badge-challenge">도전</span>`;
+        if (r.full_combo)     badges += `<span class="badge badge-fullcombo">FULL COMBO</span>`;
+
+        const namePrefix = r.is_custom ? "[커스텀] " : "";
+        const displayName = namePrefix + (r.text_name || "-");
+
+        return `<tr class="${cls}">
+            <td>${rank}</td>
+            <td>${esc(r.nickname || "익명")}</td>
+            <td>${esc(displayName)}</td>
+            <td class="cpm-val">${r.cpm} 타/분</td>
+            <td class="acc-val">${(r.accuracy || 0).toFixed(1)}%</td>
+            <td class="hide-mobile">${fmtTime(r.elapsed || 0)}</td>
+            <td class="hide-mobile">${r.backspace_count ?? 0}회</td>
+            <td>${badges}</td>
+        </tr>`;
+    }).join("");
 }
 
 // ══════════════════════════════════════════════════════════

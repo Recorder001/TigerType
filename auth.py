@@ -39,10 +39,33 @@ def set_nickname(uid: str, token: str, nickname: str):
 
 
 def save_record(uid: str, token: str, record: dict):
-    """타이핑 기록 저장. record에는 text_name, cpm, elapsed, accuracy, backspace, 등."""
+    """타이핑 기록 저장. 같은 유저+같은 연습글 기록 중 최고만 유지."""
     record["uid"] = uid
     record["timestamp"] = int(time.time())
-    db.child("records").push(record, token)
+    text_name = record.get("text_name", "")
+
+    # 기존 기록 조회하여 같은 유저+같은 연습글 찾기
+    existing = db.child("records").order_by_child("uid").equal_to(uid).get(token)
+    best_key = None
+    best_cpm = -1
+
+    if existing.each():
+        for item in existing.each():
+            val = item.val()
+            if val.get("text_name") == text_name:
+                if val.get("cpm", 0) > best_cpm:
+                    best_cpm = val.get("cpm", 0)
+                    best_key = item.key()
+                else:
+                    # 최고 기록이 아닌 이전 기록 삭제
+                    db.child("records").child(item.key()).remove(token)
+
+    if record["cpm"] > best_cpm:
+        # 새 기록이 더 좋음 → 이전 최고 삭제 후 새로 저장
+        if best_key:
+            db.child("records").child(best_key).remove(token)
+        db.child("records").push(record, token)
+    # 새 기록이 더 나쁘면 저장하지 않음
 
 
 def get_records(limit: int = 100) -> list:
