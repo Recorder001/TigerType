@@ -39,6 +39,33 @@
      ══════════════════════════════════════════════════════ -->
 <div id="page-main" class="page active">
 
+    <!-- 다운로드 배너 -->
+    <div id="download-banner" style="
+        background: linear-gradient(135deg, var(--panel2), var(--panel));
+        border: 1px solid var(--accent);
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        box-shadow: 0 4px 24px var(--accent-glow);
+    ">
+        <div>
+            <div style="font-size:20px; font-weight:900; color:var(--title-col); margin-bottom:4px;">
+                호랑이타자연습 다운로드
+            </div>
+            <div style="font-size:13px; color:var(--stat-lbl);">
+                Windows 전용 · 설치 없이 바로 실행
+            </div>
+        </div>
+        <a href="https://github.com/Recorder001/TigerType/releases/latest/download/TigerType.zip"
+           class="btn btn-accent" style="white-space:nowrap; padding:12px 32px; font-size:16px;">
+            다운로드
+        </a>
+    </div>
+
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('ranking')">랭킹</button>
         <button class="tab-btn" onclick="switchTab('shared')">커스텀 글귀</button>
