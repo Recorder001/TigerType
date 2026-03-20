@@ -58,19 +58,14 @@
             <button class="sub-tab-btn challenge-btn" onclick="switchRankMode('challenge')">도전 모드</button>
         </div>
 
-        <!-- 연습글 필터 (연습글 랭킹에서만 표시) -->
-        <div id="text-filter-wrap" style="display:none; margin-bottom:16px; align-items:center; gap:12px;">
-            <label style="font-size:14px; font-weight:600; color:var(--stat-lbl);">연습글 필터:</label>
-            <select id="ranking-filter" onchange="filterRanking()" style="
-                padding:8px 14px; border-radius:8px; border:1px solid var(--border);
-                background:var(--panel2); color:var(--white); font-size:14px;
-                font-family:inherit; outline:none; cursor:pointer;
-            ">
-                <option value="__all__">전체</option>
-            </select>
+        <!-- 연습글 카드 (연습글 랭킹 모드) -->
+        <div id="text-cards-wrap" style="display:none;">
+            <div id="text-card-grid" class="text-card-grid"></div>
+            <div id="text-detail-wrap"></div>
         </div>
 
-        <div style="overflow-x:auto;">
+        <!-- 타수/도전 테이블 -->
+        <div id="ranking-table-wrap" style="overflow-x:auto;">
             <table class="ranking-table">
                 <thead>
                     <tr>

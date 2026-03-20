@@ -206,12 +206,14 @@ async function handleProfileSave(e) {
 
 let allRecords = [];   // 전체 기록 캐시
 let rankMode = "cpm";  // "cpm" | "text" | "challenge"
+let selectedText = null; // 연습글 랭킹에서 선택된 텍스트
 
 window.loadRanking = loadRanking;
 window.filterRanking = function() { renderRanking(); };
 
 window.switchRankMode = function(mode) {
     rankMode = mode;
+    selectedText = null;
 
     // 서브 탭 활성화
     $$(".sub-tab-btn").forEach(el => el.classList.remove("active"));
@@ -228,10 +230,31 @@ window.switchRankMode = function(mode) {
     const titles = { cpm: "타수 랭킹", text: "연습글 랭킹", challenge: "도전 모드 랭킹" };
     $("#ranking-title").textContent = titles[mode];
 
-    // 연습글 필터는 연습글 랭킹에서만 표시
-    $("#text-filter-wrap").style.display = mode === "text" ? "flex" : "none";
+    // 표시 전환
+    if (mode === "text") {
+        $("#text-cards-wrap").style.display = "block";
+        $("#ranking-table-wrap").style.display = "none";
+        renderTextCards();
+    } else {
+        $("#text-cards-wrap").style.display = "none";
+        $("#ranking-table-wrap").style.display = "block";
+        renderRanking();
+    }
+};
 
-    renderRanking();
+window.selectTextCard = function(textName) {
+    selectedText = textName;
+    // 카드 활성화 표시
+    $$(".text-card").forEach(el => el.classList.remove("active"));
+    const card = document.querySelector(`.text-card[data-name="${CSS.escape(textName)}"]`);
+    if (card) card.classList.add("active");
+    renderTextDetail();
+};
+
+window.closeTextDetail = function() {
+    selectedText = null;
+    $$(".text-card").forEach(el => el.classList.remove("active"));
+    $("#text-detail-wrap").innerHTML = "";
 };
 
 async function loadRanking() {
@@ -256,8 +279,11 @@ async function loadRanking() {
         allRecords = Object.values(bestMap);
         allRecords.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
 
-        buildFilterOptions();
-        renderRanking();
+        if (rankMode === "text") {
+            renderTextCards();
+        } else {
+            renderRanking();
+        }
     } catch (err) {
         console.error("랭킹 로드 에러:", err);
         tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
@@ -265,46 +291,115 @@ async function loadRanking() {
     }
 }
 
-function buildFilterOptions() {
-    const select = $("#ranking-filter");
-    const current = select.value;
-    // 일반 모드 기록만 대상
-    const normalRecords = allRecords.filter(r => !r.challenge_mode);
-    const textNames = [...new Set(normalRecords.map(r => r.text_name || "-"))].sort();
+// ── 연습글 카드 렌더링 ─────────────────────────────────
+function renderTextCards() {
+    const grid = $("#text-card-grid");
+    const normal = allRecords.filter(r => !r.challenge_mode);
 
-    select.innerHTML = `<option value="__all__">전체</option>`;
-    for (const name of textNames) {
-        const r = normalRecords.find(x => (x.text_name || "-") === name);
-        const prefix = r && r.is_custom ? "[커스텀] " : "";
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = prefix + name;
-        select.appendChild(opt);
+    // 연습글별 그룹핑: 가장 높은 글자수와 기록 수
+    const textMap = {};
+    for (const r of normal) {
+        const name = r.text_name || "-";
+        if (!textMap[name]) {
+            textMap[name] = { name, total_jamo: r.total_jamo || 0, count: 0, is_custom: r.is_custom, preview: r.text_preview || "" };
+        }
+        textMap[name].count++;
+        if ((r.total_jamo || 0) > textMap[name].total_jamo) textMap[name].total_jamo = r.total_jamo;
+        if (!textMap[name].preview && r.text_preview) textMap[name].preview = r.text_preview;
     }
-    select.value = current || "__all__";
+
+    const texts = Object.values(textMap);
+    texts.sort((a, b) => b.total_jamo - a.total_jamo);
+
+    if (texts.length === 0) {
+        grid.innerHTML = `<div class="empty-msg" style="grid-column:1/-1;">
+            아직 기록이 없습니다.<br>게임에서 연습을 완료해 보세요!</div>`;
+        return;
+    }
+
+    grid.innerHTML = texts.map(t => {
+        const prefix = t.is_custom ? "[커스텀] " : "";
+        const active = selectedText === t.name ? "active" : "";
+        return `<div class="text-card ${active}" data-name="${esc(t.name)}"
+                     onclick="selectTextCard('${esc(t.name).replace(/'/g, "\\'")}')">
+            <div class="tc-title">${esc(prefix + t.name)}</div>
+            <div class="tc-meta">
+                <span class="tc-jamo">${t.total_jamo} 타</span>
+                <span class="tc-count">${t.count}명 참여</span>
+            </div>
+        </div>`;
+    }).join("");
+
+    // 선택된 텍스트가 있으면 상세도 갱신
+    if (selectedText) renderTextDetail();
 }
 
+// ── 연습글 상세 (미리보기 + 랭킹) ──────────────────────
+function renderTextDetail() {
+    const wrap = $("#text-detail-wrap");
+    if (!selectedText) { wrap.innerHTML = ""; return; }
+
+    const rows = allRecords
+        .filter(r => !r.challenge_mode && (r.text_name || "-") === selectedText)
+        .sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
+
+    // 미리보기 텍스트 찾기
+    const previewRecord = rows.find(r => r.text_preview) || rows[0];
+    const preview = previewRecord?.text_preview || "";
+    const prefix = previewRecord?.is_custom ? "[커스텀] " : "";
+
+    let tableHtml = "";
+    if (rows.length === 0) {
+        tableHtml = `<div class="empty-msg">이 연습글의 기록이 없습니다.</div>`;
+    } else {
+        tableHtml = `<table class="ranking-table">
+            <thead><tr>
+                <th>#</th><th>닉네임</th><th>타수</th><th>정확도</th>
+                <th class="hide-mobile">시간</th><th class="hide-mobile">Backspace</th><th>태그</th>
+            </tr></thead>
+            <tbody>${rows.map((r, i) => {
+                const rank = i + 1;
+                const cls = rank <= 3 ? `rank-${rank}` : "";
+                let badges = "";
+                if (r.full_combo) badges += `<span class="badge badge-fullcombo">FULL COMBO</span>`;
+                return `<tr class="${cls}">
+                    <td>${rank}</td>
+                    <td>${esc(r.nickname || "익명")}</td>
+                    <td class="cpm-val">${r.cpm} 타/분</td>
+                    <td class="acc-val">${(r.accuracy || 0).toFixed(1)}%</td>
+                    <td class="hide-mobile">${fmtTime(r.elapsed || 0)}</td>
+                    <td class="hide-mobile">${r.backspace_count ?? 0}회</td>
+                    <td>${badges}</td>
+                </tr>`;
+            }).join("")}</tbody>
+        </table>`;
+    }
+
+    wrap.innerHTML = `<div class="text-detail">
+        <div class="td-header">
+            <h2>${esc(prefix + selectedText)}</h2>
+            <button class="td-close" onclick="closeTextDetail()">닫기</button>
+        </div>
+        ${preview ? `<div class="td-preview">${esc(preview)}</div>` : ""}
+        <div class="td-label">랭킹</div>
+        <div style="overflow-x:auto;">${tableHtml}</div>
+    </div>`;
+
+    // 스크롤
+    wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// ── 타수/도전 테이블 렌더링 ────────────────────────────
 function renderRanking() {
     const tbody = $("#ranking-body");
 
     let rows;
     if (rankMode === "challenge") {
-        // 도전 모드 기록만
         rows = allRecords.filter(r => r.challenge_mode);
     } else {
-        // 일반 모드 기록만
         rows = allRecords.filter(r => !r.challenge_mode);
     }
 
-    // 연습글 필터 (연습글 랭킹 모드)
-    if (rankMode === "text") {
-        const filter = $("#ranking-filter").value;
-        if (filter !== "__all__") {
-            rows = rows.filter(r => (r.text_name || "-") === filter);
-        }
-    }
-
-    // 재정렬
     rows.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
 
     if (rows.length === 0) {

@@ -852,6 +852,9 @@ class TypingApp:
             return
         try:
             is_custom = self.name in self.custom_texts
+            # 미리보기용 텍스트 (최대 5줄)
+            preview_lines = self.target.split('\n')[:5]
+            text_preview = '\n'.join(preview_lines)
             record = {
                 "nickname": self.nickname,
                 "text_name": self.name,
@@ -864,10 +867,11 @@ class TypingApp:
                 "max_combo": self.max_combo,
                 "total_jamo": len(self.target_jamo),
                 "full_combo": self.combo_break_time == 0.0,
+                "text_preview": text_preview,
             }
             save_record(self.auth_user["localId"], self.auth_user["idToken"], record)
-        except Exception:
-            pass   # 기록 저장 실패해도 게임은 계속
+        except Exception as e:
+            print(f"[기록 저장 실패] {e}")
 
     # ─── 로그인 / 회원가입 이벤트 처리 ─────────────────────────
     def _ev_login(self, ev):
