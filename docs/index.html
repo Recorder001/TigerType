@@ -46,13 +46,20 @@
 
     <!-- 랭킹 탭 -->
     <div id="tab-ranking" class="tab-content active">
-        <div style="display:flex; align-items:center; gap:16px; margin-bottom:4px;">
-            <h1 class="section-title" style="margin-bottom:0;">전체 랭킹</h1>
+        <div style="display:flex; align-items:center; gap:16px; margin-bottom:12px;">
+            <h1 class="section-title" style="margin-bottom:0;" id="ranking-title">타수 랭킹</h1>
             <button class="btn-copy" onclick="loadRanking()" style="padding:6px 14px;">새로고침</button>
         </div>
 
-        <!-- 연습글 필터 -->
-        <div style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+        <!-- 서브 탭: 타수 / 연습글 / 도전 -->
+        <div class="sub-tabs">
+            <button class="sub-tab-btn active" onclick="switchRankMode('cpm')">타수 랭킹</button>
+            <button class="sub-tab-btn" onclick="switchRankMode('text')">연습글 랭킹</button>
+            <button class="sub-tab-btn challenge-btn" onclick="switchRankMode('challenge')">도전 모드</button>
+        </div>
+
+        <!-- 연습글 필터 (연습글 랭킹에서만 표시) -->
+        <div id="text-filter-wrap" style="display:none; margin-bottom:16px; align-items:center; gap:12px;">
             <label style="font-size:14px; font-weight:600; color:var(--stat-lbl);">연습글 필터:</label>
             <select id="ranking-filter" onchange="filterRanking()" style="
                 padding:8px 14px; border-radius:8px; border:1px solid var(--border);

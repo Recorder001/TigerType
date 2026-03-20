@@ -205,8 +205,34 @@ async function handleProfileSave(e) {
 // ══════════════════════════════════════════════════════════
 
 let allRecords = [];   // 전체 기록 캐시
+let rankMode = "cpm";  // "cpm" | "text" | "challenge"
 
 window.loadRanking = loadRanking;
+window.filterRanking = function() { renderRanking(); };
+
+window.switchRankMode = function(mode) {
+    rankMode = mode;
+
+    // 서브 탭 활성화
+    $$(".sub-tab-btn").forEach(el => el.classList.remove("active"));
+    event.target.classList.add("active");
+
+    // 도전 모드 테마 전환
+    if (mode === "challenge") {
+        document.body.classList.add("challenge-theme");
+    } else {
+        document.body.classList.remove("challenge-theme");
+    }
+
+    // 제목 변경
+    const titles = { cpm: "타수 랭킹", text: "연습글 랭킹", challenge: "도전 모드 랭킹" };
+    $("#ranking-title").textContent = titles[mode];
+
+    // 연습글 필터는 연습글 랭킹에서만 표시
+    $("#text-filter-wrap").style.display = mode === "text" ? "flex" : "none";
+
+    renderRanking();
+};
 
 async function loadRanking() {
     const tbody = $("#ranking-body");
@@ -218,10 +244,11 @@ async function loadRanking() {
         const raw = [];
         snap.forEach(child => raw.push(child.val()));
 
-        // 같은 uid + 같은 text_name 중 CPM 최고 기록만 유지
+        // 같은 uid + 같은 text_name + 같은 모드 중 CPM 최고 기록만 유지
         const bestMap = {};
         for (const r of raw) {
-            const key = `${r.uid || ""}__${r.text_name || ""}`;
+            const ch = r.challenge_mode ? "C" : "N";
+            const key = `${r.uid || ""}__${r.text_name || ""}__${ch}`;
             if (!bestMap[key] || (r.cpm || 0) > (bestMap[key].cpm || 0)) {
                 bestMap[key] = r;
             }
@@ -229,7 +256,6 @@ async function loadRanking() {
         allRecords = Object.values(bestMap);
         allRecords.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
 
-        // 필터 드롭다운 갱신
         buildFilterOptions();
         renderRanking();
     } catch (err) {
@@ -242,11 +268,13 @@ async function loadRanking() {
 function buildFilterOptions() {
     const select = $("#ranking-filter");
     const current = select.value;
-    const textNames = [...new Set(allRecords.map(r => r.text_name || "-"))].sort();
+    // 일반 모드 기록만 대상
+    const normalRecords = allRecords.filter(r => !r.challenge_mode);
+    const textNames = [...new Set(normalRecords.map(r => r.text_name || "-"))].sort();
 
     select.innerHTML = `<option value="__all__">전체</option>`;
     for (const name of textNames) {
-        const r = allRecords.find(x => (x.text_name || "-") === name);
+        const r = normalRecords.find(x => (x.text_name || "-") === name);
         const prefix = r && r.is_custom ? "[커스텀] " : "";
         const opt = document.createElement("option");
         opt.value = name;
@@ -256,20 +284,34 @@ function buildFilterOptions() {
     select.value = current || "__all__";
 }
 
-window.filterRanking = function() { renderRanking(); };
-
 function renderRanking() {
     const tbody = $("#ranking-body");
-    const filter = $("#ranking-filter").value;
 
-    let rows = allRecords;
-    if (filter !== "__all__") {
-        rows = rows.filter(r => (r.text_name || "-") === filter);
+    let rows;
+    if (rankMode === "challenge") {
+        // 도전 모드 기록만
+        rows = allRecords.filter(r => r.challenge_mode);
+    } else {
+        // 일반 모드 기록만
+        rows = allRecords.filter(r => !r.challenge_mode);
     }
 
+    // 연습글 필터 (연습글 랭킹 모드)
+    if (rankMode === "text") {
+        const filter = $("#ranking-filter").value;
+        if (filter !== "__all__") {
+            rows = rows.filter(r => (r.text_name || "-") === filter);
+        }
+    }
+
+    // 재정렬
+    rows.sort((a, b) => (b.cpm || 0) - (a.cpm || 0));
+
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
-            아직 기록이 없습니다.<br>게임에서 연습을 완료해 보세요!</td></tr>`;
+        const msg = rankMode === "challenge"
+            ? "도전 모드 기록이 없습니다.<br>도전 모드에서 연습을 완료해 보세요!"
+            : "아직 기록이 없습니다.<br>게임에서 연습을 완료해 보세요!";
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">${msg}</td></tr>`;
         return;
     }
 
@@ -277,8 +319,7 @@ function renderRanking() {
         const rank = i + 1;
         const cls  = rank <= 3 ? `rank-${rank}` : "";
         let badges = "";
-        if (r.challenge_mode) badges += `<span class="badge badge-challenge">도전</span>`;
-        if (r.full_combo)     badges += `<span class="badge badge-fullcombo">FULL COMBO</span>`;
+        if (r.full_combo) badges += `<span class="badge badge-fullcombo">FULL COMBO</span>`;
 
         const namePrefix = r.is_custom ? "[커스텀] " : "";
         const displayName = namePrefix + (r.text_name || "-");
@@ -455,6 +496,12 @@ window.switchTab = function(name) {
     $$(".tab-btn").forEach(el => el.classList.remove("active"));
     $(`#tab-${name}`).classList.add("active");
     event.target.classList.add("active");
+    // 랭킹 탭이 아니면 도전 모드 테마 해제
+    if (name !== "ranking") {
+        document.body.classList.remove("challenge-theme");
+    } else if (rankMode === "challenge") {
+        document.body.classList.add("challenge-theme");
+    }
 };
 
 // ══════════════════════════════════════════════════════════

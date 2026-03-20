@@ -31,6 +31,37 @@
     --bronze:      #cd7f32;
 }
 
+/* ── 도전 모드 테마 ───────────────────────────────── */
+body.challenge-theme {
+    --bg:          #160808;
+    --panel:       #280e0e;
+    --panel2:      #341212;
+    --border:      #501e1e;
+    --accent:      #ff4848;
+    --accent-dim:  #b42a2a;
+    --accent-glow: rgba(255,72,72,0.25);
+    --white:       #ffe6e6;
+    --gray:        #764646;
+    --dark-gray:   #482424;
+    --stat-val:    #ffb4b4;
+    --stat-lbl:    #945050;
+    --btn-bg:      #3a1212;
+    --btn-hover:   #642020;
+    --btn-text:    #eea0a0;
+    --title-col:   #ffc8c8;
+}
+
+body.challenge-theme .navbar {
+    background: rgba(40, 14, 14, 0.92);
+}
+
+body.challenge-theme .ranking-table tbody tr {
+    background: var(--panel);
+}
+body.challenge-theme .ranking-table tbody tr:hover {
+    background: var(--panel2);
+}
+
 html { scroll-behavior: smooth; }
 
 body {
@@ -154,6 +185,53 @@ body {
 
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+
+/* ── 서브 탭 (랭킹 내부) ────────────────────────── */
+.sub-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+}
+
+.sub-tab-btn {
+    padding: 8px 22px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--gray);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+.sub-tab-btn:hover {
+    background: var(--btn-hover);
+    color: var(--white);
+    border-color: var(--accent);
+}
+.sub-tab-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+.sub-tab-btn.challenge-btn {
+    border-color: #501e1e;
+    color: #945050;
+}
+.sub-tab-btn.challenge-btn:hover {
+    background: #3a1212;
+    border-color: #ff4848;
+    color: #ff4848;
+}
+.sub-tab-btn.challenge-btn.active {
+    background: #ff4848;
+    color: #fff;
+    border-color: #ff4848;
+}
+
+.sub-content { display: none; }
+.sub-content.active { display: block; }
 
 /* ── 랭킹 테이블 ─────────────────────────────────── */
 .ranking-table {
