@@ -264,8 +264,10 @@ async function loadRanking() {
 
     try {
         const snap = await get(ref(db, "records"));
+        console.log("snap exists:", snap.exists(), "size:", snap.size);
         const raw = [];
         snap.forEach(child => raw.push(child.val()));
+        console.log("raw count:", raw.length, "rankMode:", rankMode);
 
         // 같은 uid + 같은 text_name + 같은 모드 중 CPM 최고 기록만 유지
         const bestMap = {};
@@ -285,7 +287,7 @@ async function loadRanking() {
             renderRanking();
         }
     } catch (err) {
-        console.error("랭킹 로드 에러:", err);
+        console.error("랭킹 로드 에러:", err, err.stack);
         tbody.innerHTML = `<tr><td colspan="8" class="empty-msg">
             랭킹을 불러올 수 없습니다.</td></tr>`;
     }
