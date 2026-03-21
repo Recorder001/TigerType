@@ -7,6 +7,8 @@ import time
 import math
 import random
 import os
+import threading
+import webbrowser
 import jamo as _jamo
 
 from texts import TEXTS, TEXTS_KO, TEXTS_EN
@@ -118,11 +120,18 @@ FPS_OPTIONS = [60, 120, 144, 240]
 
 
 class TypingApp:
+    VERSION = "1.0.4"
+    GITHUB_REPO = "Recorder001/TigerType"
+
     W = 1280
     H = 720
     FPS = 240
 
-    # 텍스트 영역 레이아웃
+    # 기준 해상도 (레이아웃 스케일링 기준)
+    BASE_W    = 1280
+    BASE_H    = 720
+
+    # 텍스트 영역 레이아웃 (기준 해상도 기준값 — _update_layout_scale 에서 재계산)
     TEXT_X    = 80
     TEXT_Y    = 210   # 상단 바 + 진행바 + 콤보 아래
     TEXT_W    = 1120
@@ -137,6 +146,24 @@ class TypingApp:
         pygame.display.set_caption("호랑이 타자연습")
         self.clock = pygame.time.Clock()
 
+        # ─── 효과음 로드 ───
+        pygame.mixer.init()
+        base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        self.type_sounds = []
+        for i in range(1, 31):
+            path = os.path.join(base, 'assets', 'sounds', f'typer{i:02d}.mp3')
+            if os.path.exists(path):
+                self.type_sounds.append(pygame.mixer.Sound(path))
+
+        def _load_sfx(name):
+            p = os.path.join(base, 'assets', 'sounds', name)
+            return pygame.mixer.Sound(p) if os.path.exists(p) else None
+        self.snd_line_clear     = _load_sfx('LineClear.mp3')
+        self.snd_wrong_input    = _load_sfx('WrongInput.mp3')
+        self.snd_fullcombo_norm = _load_sfx('FullComboNormal.mp3')
+        self.snd_fullcombo_ch   = _load_sfx('FullComboChall.mp3')
+
+        self._update_layout_scale()
         self._setup_fonts()
         self._init_stars()
         self._reset()
@@ -162,6 +189,8 @@ class TypingApp:
             'resolution': (self.W, self.H),
             'fps': self.FPS,
             'font_size': 24,
+            'master_volume': 100,
+            'type_volume': 100,
             'untyped_color': list(UNTYPED),
             'correct_color': [255, 255, 255],
             'error_color': list(ERROR),
@@ -176,9 +205,26 @@ class TypingApp:
         self._build_fade_overlays()
         pygame.key.start_text_input()
 
+        # ─── 업데이트 체크 ───
+        self.update_available = None   # None=체크중, False=최신, str=새 버전 태그
+        self.update_url = None
+        self._check_update_async()
+
+        self._slider_dragging = None   # 드래그 중인 슬라이더 키
+
     def c(self, normal, challenge):
         """도전 모드에 따라 색상 반환"""
         return challenge if self.challenge_mode else normal
+
+    def _update_layout_scale(self):
+        """해상도 변경 시 레이아웃 상수를 기준 해상도(1280×720) 비율로 재계산"""
+        sx = self.W / self.BASE_W
+        sy = self.H / self.BASE_H
+        self.TEXT_X  = int(80  * sx)
+        self.TEXT_Y  = int(210 * sy)
+        self.TEXT_W  = int(1120 * sx)
+        self.LINE_H  = int(44 * sy)
+        self.BOT_H   = int(46 * sy)
 
     def _build_fade_overlays(self):
         """텍스트 영역 위/아래 페이드 오버레이 캐시 생성"""
@@ -214,9 +260,10 @@ class TypingApp:
             "nanumsquareroundbold", "nanumgothicbold", "nanumgothic",
         ]
         chosen = next((f for f in candidates if f in available), None)
+        s = min(self.W / self.BASE_W, self.H / self.BASE_H)
 
         def sf(size, bold=False):
-            return pygame.font.SysFont(chosen, size, bold=bold)
+            return pygame.font.SysFont(chosen, max(10, int(size * s)), bold=bold)
 
         self.F = {
             'title'     : sf(52, True),
@@ -274,6 +321,38 @@ class TypingApp:
             else:
                 result.append(ch)
         return result
+
+    def _play_type_sound(self):
+        if self.type_sounds:
+            vol = (self.cfg['master_volume'] / 100) * (self.cfg['type_volume'] / 100)
+            snd = random.choice(self.type_sounds)
+            snd.set_volume(vol)
+            snd.play()
+
+    def _play_sfx(self, snd):
+        if snd:
+            snd.set_volume(self.cfg['master_volume'] / 100)
+            snd.play()
+
+    # ─── 업데이트 체크 ──────────────────────────────────────────
+    def _check_update_async(self):
+        def _worker():
+            try:
+                import urllib.request, json
+                url = f"https://api.github.com/repos/{self.GITHUB_REPO}/releases/latest"
+                req = urllib.request.Request(url, headers={"Accept": "application/vnd.github.v3+json"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode())
+                tag = data.get("tag_name", "").lstrip("vV")
+                if tag and tag != self.VERSION:
+                    self.update_available = tag
+                    self.update_url = data.get("html_url",
+                        f"https://github.com/{self.GITHUB_REPO}/releases/latest")
+                else:
+                    self.update_available = False
+            except Exception:
+                self.update_available = False
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _reset(self):
         self.name             = ""
@@ -541,10 +620,12 @@ class TypingApp:
             if pos >= len(self.target_jamo):
                 break
 
+            self._play_type_sound()
             jamo_correct = (comp_jamo[k] == self.target_jamo[pos])
 
             # 콤보 갱신
             if not jamo_correct:
+                self._play_sfx(self.snd_wrong_input)
                 self.combo = 0
                 self.combo_break_time = now
                 self.composing_correct = False
@@ -601,8 +682,10 @@ class TypingApp:
                 if k < already:
                     continue      # 조합 중 이미 이펙트 발동됨
 
+                self._play_type_sound()
                 # 콤보 갱신
                 if not jamo_correct:
+                    self._play_sfx(self.snd_wrong_input)
                     self.combo = 0
                     self.combo_break_time = now
                 elif (first_new and self.last_input_time > 0
@@ -625,11 +708,13 @@ class TypingApp:
                                                 self.composing_jamo_processed - target_n)
             self.typed += ch
 
-            # 줄바꿈 시: 이전 줄 전체 정타이면 라인 파티클 + 강한 셰이크
-            if ch == '\n' and self._is_line_perfect(char_idx):
-                if self.cfg['particles_enabled']:
-                    self._spawn_line_particles(char_idx)
-                self._trigger_shake(10)
+            # 줄바꿈 시
+            if ch == '\n':
+                self._play_sfx(self.snd_line_clear)
+                if self._is_line_perfect(char_idx):
+                    if self.cfg['particles_enabled']:
+                        self._spawn_line_particles(char_idx)
+                    self._trigger_shake(10)
 
         self.composing = ""
         self.composing_correct = True
@@ -644,6 +729,10 @@ class TypingApp:
                 self.fc_start = time.time()
                 self._spawn_fullcombo_particles()
                 self._trigger_shake(30)
+                if self.challenge_mode:
+                    self._play_sfx(self.snd_fullcombo_ch)
+                else:
+                    self._play_sfx(self.snd_fullcombo_norm)
             else:
                 self.result_time = time.time()
                 self.state = 'result'
@@ -652,6 +741,7 @@ class TypingApp:
 
     def _backspace(self):
         if self.typed:
+            self._play_type_sound()
             self.backspace_count += 1
             char_idx = len(self.typed) - 1
             start, end = self.char_jamo_ranges[char_idx]
@@ -1092,6 +1182,9 @@ class TypingApp:
                         self.challenge_mode = not self.challenge_mode
                         self.challenge_flash = time.time()
                         self._trigger_shake(15)
+                    elif key == '__update__':
+                        if self.update_url:
+                            webbrowser.open(self.update_url)
                     elif key == '__settings__':
                         self._enter_settings()
                     elif key == '__tab_한글__':
@@ -1374,6 +1467,20 @@ class TypingApp:
                                        self.c(TITLE_COL, CH_TITLE_COL))
         self.disp.blit(title, (self.W // 2 - title.get_width() // 2, 36))
 
+        # ── 업데이트 배너 ──
+        if self.update_available and self.update_available is not False:
+            upd_text = f"새 버전 v{self.update_available} 출시! 클릭하여 다운로드"
+            upd_surf = self.F['btn_sm'].render(upd_text, True, (255, 255, 255))
+            upd_w = upd_surf.get_width() + 32
+            upd_rect = pygame.Rect(self.W // 2 - upd_w // 2, 76, upd_w, 28)
+            self.btn_rects['__update__'] = upd_rect
+            upd_hover = upd_rect.collidepoint(self.mouse)
+            upd_bg = (40, 120, 60) if upd_hover else (30, 90, 45)
+            pygame.draw.rect(self.disp, upd_bg, upd_rect, border_radius=6)
+            pygame.draw.rect(self.disp, CORRECT, upd_rect, 1, border_radius=6)
+            self.disp.blit(upd_surf, (upd_rect.centerx - upd_surf.get_width() // 2,
+                                      upd_rect.centery - upd_surf.get_height() // 2))
+
         if self.challenge_mode:
             sub = self.F['subhead'].render("도전 모드: 백스페이스 없음!", True, (255, 72, 72))
             self.disp.blit(sub, (self.W // 2 - sub.get_width() // 2, 100))
@@ -1422,8 +1529,8 @@ class TypingApp:
         all_src  = {**text_src, **self.custom_texts}
         names    = list(all_src.keys())
         custom_start = len(text_src)   # 커스텀 글귀 시작 인덱스
-        list_w   = 700
-        item_h   = 64
+        list_w   = int(700 * self.W / self.BASE_W)
+        item_h   = int(64 * self.H / self.BASE_H)
         gap      = 8
         list_x   = self.W // 2 - list_w // 2
         list_top = tab_y + tab_h + 20
@@ -1546,9 +1653,12 @@ class TypingApp:
         self._draw_bottom_bar()
 
     def _draw_top_bar(self):
-        bar_h = 118
+        sy = self.H / self.BASE_H
+        sx_r = self.W / self.BASE_W
+        bar_h = int(118 * sy)
         pygame.draw.rect(self.disp, self.c(PANEL, CH_PANEL), (0, 0, self.W, bar_h))
         pygame.draw.line(self.disp, self.c(BORDER, CH_BORDER), (0, bar_h), (self.W, bar_h), 1)
+        self._bar_h = bar_h   # 다른 메서드에서 참조
 
         # 좌측 제목
         prefix = "호랑이타자연습"
@@ -1556,11 +1666,11 @@ class TypingApp:
             prefix += " [도전]"
         t = self.F['subhead'].render(f"{prefix}  |  {self.name}", True,
                                      self.c(GRAY, CH_GRAY))
-        self.disp.blit(t, (20, 14))
+        self.disp.blit(t, (int(20 * sx_r), int(14 * sy)))
 
         # 우측 ESC 안내
         esc = self.F['small'].render("ESC — 메뉴로", True, self.c(DARK_GRAY, CH_DARK_GRAY))
-        self.disp.blit(esc, (self.W - esc.get_width() - 20, 14))
+        self.disp.blit(esc, (self.W - esc.get_width() - int(20 * sx_r), int(14 * sy)))
 
         # ── 4개 통계 ──
         stats = [
@@ -1569,17 +1679,20 @@ class TypingApp:
             ("경과 시간", self._fmt_time(self.elapsed)),
             ("진행률",    f"{self.progress:.1f}%"),
         ]
-        sx_list  = [160, 480, 800, 1120]
-        dividers = [320, 640, 960]
+        # 4등분 좌표
+        n = len(stats)
+        sx_list  = [int(self.W * (2 * i + 1) / (2 * n)) for i in range(n)]
+        dividers = [int(self.W * (i + 1) / n) for i in range(n - 1)]
 
-        for (lbl, val), sx in zip(stats, sx_list):
+        for (lbl, val), sxx in zip(stats, sx_list):
             vs = self.F['stat_v'].render(val, True, self.c(STAT_VAL, CH_STAT_VAL))
             ls = self.F['stat_l'].render(lbl, True, self.c(STAT_LBL, CH_STAT_LBL))
-            self.disp.blit(vs, (sx - vs.get_width() // 2, 38))
-            self.disp.blit(ls, (sx - ls.get_width() // 2, 84))
+            self.disp.blit(vs, (sxx - vs.get_width() // 2, int(38 * sy)))
+            self.disp.blit(ls, (sxx - ls.get_width() // 2, int(84 * sy)))
 
         for dx in dividers:
-            pygame.draw.line(self.disp, self.c(BORDER, CH_BORDER), (dx, 34), (dx, 106), 1)
+            pygame.draw.line(self.disp, self.c(BORDER, CH_BORDER),
+                             (dx, int(34 * sy)), (dx, int(106 * sy)), 1)
 
     def _draw_combo_overlay(self):
         """진행바 아래 가운데에 콤보 표시 (1타마다 갱신 애니메이션)"""
@@ -1603,7 +1716,9 @@ class TypingApp:
             scale = 1.0
 
         cx = self.W // 2
-        cy = 132          # 진행바(118+8) 바로 아래
+        bar_h = getattr(self, '_bar_h', int(118 * self.H / self.BASE_H))
+        prog_h = max(4, int(8 * self.H / self.BASE_H))
+        cy = bar_h + prog_h + int(6 * self.H / self.BASE_H)
 
         # 콤보 숫자
         num_surf = self.F['combo_num'].render(str(self.combo), True, col)
@@ -1624,13 +1739,15 @@ class TypingApp:
         self.disp.blit(lbl, (cx - lbl.get_width() // 2, cy + base_h + 2))
 
     def _draw_progress_bar(self):
-        pygame.draw.rect(self.disp, self.c(PROG_BG, CH_PROG_BG), (0, 118, self.W, 8))
+        bar_h = getattr(self, '_bar_h', int(118 * self.H / self.BASE_H))
+        prog_h = max(4, int(8 * self.H / self.BASE_H))
+        pygame.draw.rect(self.disp, self.c(PROG_BG, CH_PROG_BG), (0, bar_h, self.W, prog_h))
         fw = int(self.W * self.progress / 100)
         if fw > 0:
-            pygame.draw.rect(self.disp, self.c(PROG_FG, CH_PROG_FG), (0, 118, fw, 8))
-        # 진행 포인트
+            pygame.draw.rect(self.disp, self.c(PROG_FG, CH_PROG_FG), (0, bar_h, fw, prog_h))
         if 0 < fw < self.W:
-            pygame.draw.circle(self.disp, self.c(CORRECT, CH_CORRECT), (fw, 122), 5)
+            pygame.draw.circle(self.disp, self.c(CORRECT, CH_CORRECT),
+                               (fw, bar_h + prog_h // 2), max(3, int(5 * self.H / self.BASE_H)))
 
     CURSOR_COLOR   = (255, 218, 72)     # 노랑 커서
     CURSOR_EASE_SP = 18.0               # ease-out 속도 계수
@@ -1776,6 +1893,8 @@ class TypingApp:
         {'key': 'resolution',         'label': '해상도',              'type': 'dropdown'},
         {'key': 'fps',                'label': '주사율',              'type': 'dropdown'},
         {'key': 'font_size',          'label': '글귀 크기',           'type': 'stepper'},
+        {'key': 'master_volume',      'label': '마스터 볼륨',         'type': 'slider'},
+        {'key': 'type_volume',        'label': '타건음 볼륨',         'type': 'slider'},
         {'key': 'untyped_color',      'label': '미작성 글귀 색상',    'type': 'color'},
         {'key': 'correct_color',      'label': '정타 글귀 색상',      'type': 'color'},
         {'key': 'error_color',        'label': '오타 글귀 색상',      'type': 'color'},
@@ -1875,8 +1994,10 @@ class TypingApp:
             pos = base + k
             if pos >= len(s['target_jamo']):
                 break
+            self._play_type_sound()
             jamo_correct = (comp_jamo[k] == s['target_jamo'][pos])
             if not jamo_correct:
+                self._play_sfx(self.snd_wrong_input)
                 s['combo'] = 0
                 s['combo_break_time'] = now
                 s['composing_correct'] = False
@@ -1919,7 +2040,9 @@ class TypingApp:
                 s['typed_jamo'].append(uj)
                 if k < already:
                     continue
+                self._play_type_sound()
                 if not jamo_correct:
+                    self._play_sfx(self.snd_wrong_input)
                     s['combo'] = 0
                     s['combo_break_time'] = now
                 elif first_new and s['last_input_time'] > 0 \
@@ -1943,6 +2066,7 @@ class TypingApp:
     def _st_backspace(self):
         s = self.st
         if s['typed']:
+            self._play_type_sound()
             ci = len(s['typed']) - 1
             start, end = s['char_jamo_ranges'][ci]
             s['typed'] = s['typed'][:-1]
@@ -2011,6 +2135,20 @@ class TypingApp:
                 if not self.challenge_mode and not self.st['composing']:
                     self._st_backspace()
 
+        # 슬라이더 드래그
+        if ev.type == pygame.MOUSEMOTION and self._slider_dragging:
+            key = self._slider_dragging
+            for item_info in getattr(self, '_settings_click_rects', []):
+                k, rect, st = item_info
+                if k == key and st == 'slider':
+                    val = max(0, min(100, int((ev.pos[0] - rect.x) / rect.w * 100)))
+                    self.cfg[key] = val
+                    break
+            return
+        if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1 and self._slider_dragging:
+            self._slider_dragging = None
+            return
+
         # UI 클릭
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             mx, my = ev.pos
@@ -2054,6 +2192,10 @@ class TypingApp:
                             self.cfg_dropdown = key
                         elif stype == 'color':
                             self.cfg_colorpick = key
+                        elif stype == 'slider':
+                            val = max(0, min(100, int((mx - rect.x) / rect.w * 100)))
+                            self.cfg[key] = val
+                            self._slider_dragging = key
                         elif stype == 'toggle':
                             self.cfg[key] = not self.cfg[key]
                         elif stype == 'stepper_down':
@@ -2096,6 +2238,9 @@ class TypingApp:
         if (rw, rh) != (self.W, self.H):
             self.W, self.H = rw, rh
             self.disp = pygame.display.set_mode((self.W, self.H))
+            self._update_layout_scale()
+            self._setup_fonts()
+            self._init_stars()
             self._build_fade_overlays()
         self.FPS = self.cfg['fps']
         self._apply_font_size()
@@ -2128,7 +2273,7 @@ class TypingApp:
         self._settings_click_rects = []
         self._dd_rects = {}
         self._cp_rects = {}
-        sy = 78
+        sy = int(78 * self.H / self.BASE_H)
         f_lbl = self.F['small']
         f_val = self.F['btn_sm']
 
@@ -2143,9 +2288,9 @@ class TypingApp:
             ls = f_lbl.render(label, True, STAT_LBL)
             self.disp.blit(ls, (36, sy + 8))
 
-            ctrl_x = half - 220
-            ctrl_w = 190
-            ctrl_h = 30
+            ctrl_x = half - int(220 * self.W / self.BASE_W)
+            ctrl_w = int(190 * self.W / self.BASE_W)
+            ctrl_h = int(30 * self.H / self.BASE_H)
 
             if stype == 'dropdown':
                 # 현재 값 표시
@@ -2214,6 +2359,24 @@ class TypingApp:
                 if self.cfg_colorpick == key:
                     deferred_popup = ('color', key, ctrl_x, ctrl_w, ctrl_h, rect.bottom)
 
+            elif stype == 'slider':
+                val = self.cfg[key]   # 0~100
+                track_rect = pygame.Rect(ctrl_x, sy + 4 + ctrl_h // 2 - 3, ctrl_w, 6)
+                pygame.draw.rect(self.disp, DARK_GRAY, track_rect, border_radius=3)
+                fill_w = int(ctrl_w * val / 100)
+                fill_rect = pygame.Rect(ctrl_x, track_rect.y, fill_w, 6)
+                pygame.draw.rect(self.disp, ACCENT, fill_rect, border_radius=3)
+                # 핸들
+                handle_x = ctrl_x + fill_w
+                handle_r = pygame.Rect(handle_x - 8, sy + 4 + ctrl_h // 2 - 8, 16, 16)
+                pygame.draw.circle(self.disp, WHITE, handle_r.center, 8)
+                # 값 표시
+                vs = f_val.render(f"{val}%", True, STAT_VAL)
+                self.disp.blit(vs, (ctrl_x + ctrl_w + 10, sy + 4 + ctrl_h // 2 - vs.get_height() // 2))
+                # 클릭/드래그 영역 (트랙 전체)
+                slider_area = pygame.Rect(ctrl_x, sy + 4, ctrl_w, ctrl_h)
+                self._settings_click_rects.append((key, slider_area, 'slider'))
+
             elif stype == 'toggle':
                 val = self.cfg[key]
                 rect = pygame.Rect(ctrl_x, sy + 4, 80, ctrl_h)
@@ -2225,7 +2388,7 @@ class TypingApp:
                                     rect.centery - ts.get_height() // 2))
                 self._settings_click_rects.append((key, rect, 'toggle'))
 
-            sy += 48
+            sy += int(48 * self.H / self.BASE_H)
 
         # ── 팝업 후처리: 드롭다운 / 컬러 피커를 모든 항목 위에 그림 ──
         if deferred_popup is not None:
@@ -2595,7 +2758,8 @@ class TypingApp:
         overlay.fill(ov_col)
         self.disp.blit(overlay, (0, 0))
 
-        cw, ch = 580, 522
+        sc = min(self.W / self.BASE_W, self.H / self.BASE_H)
+        cw, ch = int(580 * sc), int(522 * sc)
         cx = self.W // 2 - cw // 2
         cy = self.H // 2 - ch // 2
 
@@ -2606,10 +2770,11 @@ class TypingApp:
         # 완료 헤딩
         head_text = "도전 완료!" if self.challenge_mode else "연습 완료!"
         head = self.F['result_lbl'].render(head_text, True, self.c(ACCENT, CH_ACCENT))
-        self.disp.blit(head, (cx + cw // 2 - head.get_width() // 2, cy + 28))
+        self.disp.blit(head, (cx + cw // 2 - head.get_width() // 2, cy + int(28 * sc)))
 
         pygame.draw.line(self.disp, self.c(BORDER, CH_BORDER),
-                         (cx + 40, cy + 66), (cx + cw - 40, cy + 66), 1)
+                         (cx + int(40 * sc), cy + int(66 * sc)),
+                         (cx + cw - int(40 * sc), cy + int(66 * sc)), 1)
 
         # 통계 목록
         stats = [
@@ -2620,15 +2785,18 @@ class TypingApp:
             ("최대 콤보",   f"{self.max_combo} 콤보"),
             ("Backspace",  f"{self.backspace_count} 회"),
         ]
-        sy = cy + 82
+        row_h = int(52 * sc)
+        sy = cy + int(82 * sc)
+        pad = int(50 * sc)
         for lbl, val in stats:
             ls = self.F['result_lbl'].render(lbl, True, self.c(STAT_LBL, CH_STAT_LBL))
             vs = self.F['result_lbl'].render(val, True, self.c(STAT_VAL, CH_STAT_VAL))
-            self.disp.blit(ls, (cx + 50,            sy))
-            self.disp.blit(vs, (cx + cw - 50 - vs.get_width(), sy))
+            self.disp.blit(ls, (cx + pad,            sy))
+            self.disp.blit(vs, (cx + cw - pad - vs.get_width(), sy))
             pygame.draw.line(self.disp, self.c(BORDER, CH_BORDER),
-                             (cx + 36, sy + 34), (cx + cw - 36, sy + 34), 1)
-            sy += 52
+                             (cx + int(36 * sc), sy + int(34 * sc)),
+                             (cx + cw - int(36 * sc), sy + int(34 * sc)), 1)
+            sy += row_h
 
         # 정확도에 따른 평가 메시지
         acc = self.accuracy
@@ -2642,10 +2810,11 @@ class TypingApp:
             grade, gcol = "조금 더 연습해요!", self.c(GRAY, CH_GRAY)
 
         gsurf = self.F['subhead'].render(grade, True, gcol)
-        self.disp.blit(gsurf, (cx + cw // 2 - gsurf.get_width() // 2, sy + 4))
+        self.disp.blit(gsurf, (cx + cw // 2 - gsurf.get_width() // 2, sy + int(4 * sc)))
 
         # 돌아가기 버튼
-        br = pygame.Rect(cx + cw // 2 - 110, cy + ch - 66, 220, 44)
+        btn_w, btn_h = int(220 * sc), int(44 * sc)
+        br = pygame.Rect(cx + cw // 2 - btn_w // 2, cy + ch - int(66 * sc), btn_w, btn_h)
         bhover = br.collidepoint(self.mouse)
         pygame.draw.rect(self.disp, self.c(BTN_HOVER, CH_BTN_HOVER) if bhover
                          else self.c(BTN_BG, CH_BTN_BG), br, border_radius=10)
@@ -2656,7 +2825,7 @@ class TypingApp:
 
         hint = self.F['small'].render("클릭하여 메뉴로 돌아가기", True,
                                       self.c(DARK_GRAY, CH_DARK_GRAY))
-        self.disp.blit(hint, (self.W // 2 - hint.get_width() // 2, cy + ch + 18))
+        self.disp.blit(hint, (self.W // 2 - hint.get_width() // 2, cy + ch + int(18 * sc)))
 
         # 풀 콤보 후 페이드인 (검정 → 투명)
         fi_start = getattr(self, 'fc_fadein_start', 0)
