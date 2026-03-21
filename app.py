@@ -120,7 +120,7 @@ FPS_OPTIONS = [60, 120, 144, 240]
 
 
 class TypingApp:
-    VERSION = "1.0.4"
+    VERSION = "1.0.5"
     GITHUB_REPO = "Recorder001/TigerType"
 
     W = 1280
@@ -708,13 +708,12 @@ class TypingApp:
                                                 self.composing_jamo_processed - target_n)
             self.typed += ch
 
-            # 줄바꿈 시
-            if ch == '\n':
+            # 줄바꿈 시: 이전 줄 전체 정타이면 파티클 + 셰이크 + 효과음
+            if ch == '\n' and self._is_line_perfect(char_idx):
                 self._play_sfx(self.snd_line_clear)
-                if self._is_line_perfect(char_idx):
-                    if self.cfg['particles_enabled']:
-                        self._spawn_line_particles(char_idx)
-                    self._trigger_shake(10)
+                if self.cfg['particles_enabled']:
+                    self._spawn_line_particles(char_idx)
+                self._trigger_shake(10)
 
         self.composing = ""
         self.composing_correct = True
